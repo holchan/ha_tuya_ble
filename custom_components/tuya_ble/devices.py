@@ -339,19 +339,6 @@ devices_database: dict[str, TuyaBLECategoryInfo] = {
             ),
         },
     ),
-    "ms": TuyaBLECategoryInfo(
-        products={
-            **dict.fromkeys(
-                ["ludzroix", "isk2p555", "gumrixyt", "uamrw6h3"],
-                TuyaBLEProductInfo(  # device product_id
-                    name="Smart Lock",
-                ),
-            ),
-            "okkyfgfs": TuyaBLEProductInfo(
-                name="TEKXDD Fingerprint Smart Lock"
-            ),
-        },
-    ),
     "szjqr": TuyaBLECategoryInfo(
         products={
             "3yqdo5yt": TuyaBLEProductInfo(  # device product_id
