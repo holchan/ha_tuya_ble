@@ -497,10 +497,16 @@ devices_database: dict[str, TuyaBLECategoryInfo] = {
     ),
     "dj": TuyaBLECategoryInfo(
         products={
-            "u4h3jtqr": TuyaBLEProductInfo(
-                name="SSG Smart 9W",
-                manufacturer="Super Star Group",
-            )
+            **dict.fromkeys(
+                [
+                    "u4h3jtqr",
+                    "heflj0rj",
+                ],
+                TuyaBLEProductInfo(
+                    name="Tuya Smart Light",
+                    manufacturer="Generic",
+                ),
+            ),
         },
         info=TuyaBLEProductInfo(
             name="Smart Bulb",
