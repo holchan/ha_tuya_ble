@@ -166,6 +166,7 @@ class HASSTuyaBLEDeviceManager(AbstaractTuyaBLEDeviceManager):
                     cache_item.login = data
                 else:
                     _cache[cache_key] = TuyaCloudCacheItem(api, data, {})
+                    _LOGGER.debug("%s: Response", response)
 
         return response
 
@@ -183,14 +184,16 @@ class HASSTuyaBLEDeviceManager(AbstaractTuyaBLEDeviceManager):
         )
         if devices_response.get(TUYA_RESPONSE_RESULT):
             devices = devices_response.get(TUYA_RESPONSE_RESULT)
+            _LOGGER.debug("Successful devices for %s", devices)
             if isinstance(devices, Iterable):
                 for device in devices:
+                    _LOGGER.debug("Device Loop %s", device)
                     fi_response = await self._hass.async_add_executor_job(
                         item.api.get,
                         TUYA_API_FACTORY_INFO_URL % (device.get("id")),
                     )
-
                     fi_response_result = fi_response.get(TUYA_RESPONSE_RESULT)
+                    _LOGGER.debug("%s :",fi_response_result)
                     if fi_response_result and len(fi_response_result) > 0:
                         factory_info = fi_response_result[0]
                         if factory_info and (TUYA_FACTORY_INFO_MAC in factory_info):
