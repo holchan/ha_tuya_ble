@@ -95,7 +95,6 @@ class TuyaLightEntityDescription(
             ):
     """Describe an Tuya light entity."""
 
-    key: str
     brightness_max: DPCode | None = None
     brightness_min: DPCode | None = None
     brightness: DPCode | tuple[DPCode, ...] | None = None
