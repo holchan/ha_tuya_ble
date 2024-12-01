@@ -94,7 +94,18 @@ class TuyaLightEntityDescription(
             LightEntityDescription
             ):
     """Describe an Tuya light entity."""
-
+    
+    # Required parameters from LightEntityDescription must come first
+    key: str
+    name: str | None = None  # If LightEntityDescription has this as required
+    
+    # Then inherited parameters from TuyaBLEEntityDescription 
+    function: list[dict[str, dict]] | None = None
+    status_range: list[dict[str, dict]] | None = None
+    values_overrides: dict[str, dict] | None = None
+    values_defaults: dict[str, dict] | None = None
+    
+    # Then the light-specific optional parameters
     brightness_max: DPCode | None = None
     brightness_min: DPCode | None = None
     brightness: DPCode | tuple[DPCode, ...] | None = None
