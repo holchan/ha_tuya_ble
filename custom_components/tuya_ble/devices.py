@@ -499,7 +499,22 @@ devices_database: dict[str, TuyaBLECategoryInfo] = {
         info = TuyaBLEProductInfo(
                 name="Strip Lights",
 		),
-
+    ),
+    "dj": TuyaBLECategoryInfo(
+        products={
+            **dict.fromkeys(
+            [
+            "heflj0rj",
+            ],
+            TuyaBLEProductInfo(
+                name="Downlights", 
+                manufacturer="Tuya",
+            ),
+            ),
+        },
+        info = TuyaBLEProductInfo(
+                name="Light",
+        ),
     ),
 }
 
