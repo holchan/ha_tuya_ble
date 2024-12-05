@@ -99,7 +99,7 @@ async def _try_login(
     return None
 
 
-def _show_login_form(
+async def _show_login_form(
     flow: FlowHandler,
     user_input: dict[str, Any],
     errors: dict[str, str],
@@ -114,9 +114,13 @@ def _show_login_form(
 
     def_country_name: str | None = None
     try:
-        def_country = pycountry.countries.get(alpha_2=flow.hass.config.country)
-        if def_country:
-            def_country_name = def_country.name
+        async def get_country_name():
+            def _get_country():
+                country = pycountry.countries.get(alpha_2=flow.hass.config.country)
+                return country.name if country else None
+            return await flow.hass.async_add_executor_job(_get_country)
+        
+        def_country_name = await get_country_name()
     except:
         pass
 
@@ -128,7 +132,6 @@ def _show_login_form(
                     CONF_COUNTRY_CODE,
                     default=user_input.get(CONF_COUNTRY_CODE, def_country_name),
                 ): vol.In(
-                    # We don't pass a dict {code:name} because country codes can be duplicate.
                     [country.name for country in TUYA_COUNTRIES]
                 ),
                 vol.Required(
