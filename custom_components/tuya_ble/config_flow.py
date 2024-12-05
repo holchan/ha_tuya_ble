@@ -239,7 +239,13 @@ class TuyaBLEConfigFlow(ConfigFlow, domain=DOMAIN):
     ) -> FlowResult:
         """Handle the user step."""
         if user_input is None:
+            # Initialize manager before proceeding to login step
+            if self._manager is None:
+                self._manager = HASSTuyaBLEDeviceManager(self.hass, self._data)
+            await self._manager.build_cache()
             return await self.async_step_login()
+
+        # Rest of the method remains unchanged
         if self._manager is None:
             self._manager = HASSTuyaBLEDeviceManager(self.hass, self._data)
         await self._manager.build_cache()
@@ -252,6 +258,11 @@ class TuyaBLEConfigFlow(ConfigFlow, domain=DOMAIN):
         data: dict[str, Any] | None = None
         errors: dict[str, str] = {}
         placeholders: dict[str, Any] = {}
+
+        # Ensure manager is initialized
+        if self._manager is None:
+            self._manager = HASSTuyaBLEDeviceManager(self.hass, self._data)
+            await self._manager.build_cache()
 
         if user_input is not None:
             data = await _try_login(
@@ -277,7 +288,7 @@ class TuyaBLEConfigFlow(ConfigFlow, domain=DOMAIN):
             if self._data is not None and len(self._data) > 0:
                 user_input.update(self._data)
 
-        return _show_login_form(self, user_input, errors, placeholders)
+        return await _show_login_form(self, user_input, errors, placeholders)
 
     async def async_step_device(
         self, user_input: dict[str, Any] | None = None
