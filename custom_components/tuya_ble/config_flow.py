@@ -100,55 +100,49 @@ async def _try_login(
 
 
 async def _show_login_form(
-    flow: FlowHandler,
-    user_input: dict[str, Any],
+    flow: ConfigFlow,
+    user_input: dict[str, Any] | None,
     errors: dict[str, str],
-    placeholders: dict[str, Any],
+    placeholders: dict[str, str],
 ) -> FlowResult:
-    """Shows the Tuya IOT platform login form."""
-    if user_input is not None and user_input.get(CONF_COUNTRY_CODE) is not None:
-        for country in TUYA_COUNTRIES:
-            if country.country_code == user_input[CONF_COUNTRY_CODE]:
-                user_input[CONF_COUNTRY_CODE] = country.name
-                break
+    """Show the login form."""
+    if user_input is None:
+        user_input = {}
 
     def_country_name: str | None = None
     try:
-        async def get_country_name():
-            def _get_country():
-                country = pycountry.countries.get(alpha_2=flow.hass.config.country)
-                return country.name if country else None
-            return await flow.hass.async_add_executor_job(_get_country)
+        def _get_country():
+            country = pycountry.countries.get(alpha_2=flow.hass.config.country)
+            return country.name if country else None
         
-        def_country_name = await get_country_name()
-    except:
+        def_country_name = await flow.hass.async_add_executor_job(_get_country)
+    except Exception:
         pass
 
     return flow.async_show_form(
         step_id="login",
-        data_schema=vol.Schema(
-            {
-                vol.Required(
-                    CONF_COUNTRY_CODE,
-                    default=user_input.get(CONF_COUNTRY_CODE, def_country_name),
-                ): vol.In(
-                    [country.name for country in TUYA_COUNTRIES]
-                ),
-                vol.Required(
-                    CONF_ACCESS_ID, default=user_input.get(CONF_ACCESS_ID, "")
-                ): str,
-                vol.Required(
-                    CONF_ACCESS_SECRET,
-                    default=user_input.get(CONF_ACCESS_SECRET, ""),
-                ): str,
-                vol.Required(
-                    CONF_USERNAME, default=user_input.get(CONF_USERNAME, "")
-                ): str,
-                vol.Required(
-                    CONF_PASSWORD, default=user_input.get(CONF_PASSWORD, "")
-                ): str,
-            }
-        ),
+        data_schema=vol.Schema({
+            vol.Required(
+                CONF_COUNTRY_CODE,
+                default=user_input.get(CONF_COUNTRY_CODE, def_country_name),
+            ): vol.In([country.name for country in TUYA_COUNTRIES]),
+            vol.Required(
+                CONF_ACCESS_ID,
+                default=user_input.get(CONF_ACCESS_ID, "")
+            ): str,
+            vol.Required(
+                CONF_ACCESS_SECRET,
+                default=user_input.get(CONF_ACCESS_SECRET, ""),
+            ): str,
+            vol.Required(
+                CONF_USERNAME,
+                default=user_input.get(CONF_USERNAME, "")
+            ): str,
+            vol.Required(
+                CONF_PASSWORD,
+                default=user_input.get(CONF_PASSWORD, "")
+            ): str,
+        }),
         errors=errors,
         description_placeholders=placeholders,
     )
@@ -171,7 +165,8 @@ class TuyaBLEOptionsFlow(OptionsFlowWithConfigEntry):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Handle the Tuya IOT platform login step."""
-        errors: dict[str, str] = {}
+        errors = {}
+        placeholders = {}
         placeholders: dict[str, Any] = {}
         credentials: TuyaBLEDeviceCredentials | None = None
         address: str | None = self.config_entry.data.get(CONF_ADDRESS)
@@ -243,6 +238,8 @@ class TuyaBLEConfigFlow(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Handle the user step."""
+        if user_input is None:
+            return await self.async_step_login()
         if self._manager is None:
             self._manager = HASSTuyaBLEDeviceManager(self.hass, self._data)
         await self._manager.build_cache()
