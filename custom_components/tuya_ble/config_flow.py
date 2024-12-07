@@ -311,7 +311,10 @@ class TuyaBLEConfigFlow(ConfigFlow, domain=DOMAIN):
             if data:
                 _LOGGER.debug("Login data obtained: %s", data)
                 self._data.update(data)
-                _LOGGER.debug("Discovery service_data: %s", self._discovery_info.service_data)
+                if self._discovery_info is not None:
+                    _LOGGER.debug("Discovery service_data: %s", self._discovery_info.service_data)
+                else:
+                    _LOGGER.debug("No discovery info available")
                 _LOGGER.debug("SERVICE_UUID: %s", SERVICE_UUID)
                 return await self.async_step_device()
 
