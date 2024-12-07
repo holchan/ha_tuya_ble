@@ -21,7 +21,7 @@ from homeassistant.helpers.update_coordinator import (
 
 from home_assistant_bluetooth import BluetoothServiceInfoBleak
 from .tuya_ble import (
-    AbstaractTuyaBLEDeviceManager,
+    AbstractTuyaBLEDeviceManager,
     TuyaBLEDataPoint,
     TuyaBLEDevice,
     TuyaBLEDeviceCredentials,
