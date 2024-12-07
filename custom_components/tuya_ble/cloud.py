@@ -304,6 +304,8 @@ class HASSTuyaBLEDeviceManager(AbstractTuyaBLEDeviceManager):
     ) -> TuyaBLEDeviceCredentials | None:
         """Get credentials of the Tuya BLE device."""
         global _cache
+        _LOGGER.debug("Attempting to get credentials for device: %s", address)
+        _LOGGER.debug("Cache contents: %s", _cache)
         _LOGGER.debug("Getting device credentials for address: %s", address)
         item: TuyaCloudCacheItem | None = None
         credentials: dict[str, any] | None = None

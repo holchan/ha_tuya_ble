@@ -240,9 +240,11 @@ class TuyaBLEConfigFlow(ConfigFlow, domain=DOMAIN):
         self._get_device_info_error = False
         _LOGGER.debug("Initialized TuyaBLEConfigFlow")
 
-    async def async_step_bluetooth(
-        self, discovery_info: BluetoothServiceInfoBleak
-    ) -> FlowResult:
+    async def async_step_bluetooth(self, discovery_info: BluetoothServiceInfoBleak) -> FlowResult:
+        """Handle the bluetooth discovery step."""
+        _LOGGER.debug("Bluetooth discovery step with discovery info: %s", discovery_info)
+        _LOGGER.debug("Discovery service_data: %s", discovery_info.service_data)
+        _LOGGER.debug("Discovery service_uuids: %s", discovery_info.service_uuids)
         """Handle the bluetooth discovery step."""
         _LOGGER.debug("Bluetooth discovery step with discovery info: %s", discovery_info)
         await self.async_set_unique_id(discovery_info.address)
@@ -309,6 +311,8 @@ class TuyaBLEConfigFlow(ConfigFlow, domain=DOMAIN):
             if data:
                 _LOGGER.debug("Login data obtained: %s", data)
                 self._data.update(data)
+                _LOGGER.debug("Discovery service_data: %s", self._discovery_info.service_data)
+                _LOGGER.debug("SERVICE_UUID: %s", SERVICE_UUID)
                 return await self.async_step_device()
 
         if user_input is None:
@@ -366,18 +370,33 @@ class TuyaBLEConfigFlow(ConfigFlow, domain=DOMAIN):
             _LOGGER.debug("Discovery info added to discovered devices: %s", discovery)
         else:
             current_addresses = self._async_current_ids()
+            _LOGGER.debug("Current addresses: %s", current_addresses)
             for discovery in async_discovered_service_info(self.hass):
+                _LOGGER.debug("Evaluating discovery: %s", discovery)
+                _LOGGER.debug("Discovery service_data: %s", discovery.service_data)
+                _LOGGER.debug("Discovery service_uuids: %s", discovery.service_uuids)
+                
                 if (
                     discovery.address in current_addresses
                     or discovery.address in self._discovered_devices
                     or discovery.service_data is None
                     or not SERVICE_UUID in discovery.service_data.keys()
                 ):
+                    _LOGGER.debug(
+                        "Skipping device %s: already configured=%s, already discovered=%s, no service data=%s, no service uuid=%s",
+                        discovery.address,
+                        discovery.address in current_addresses,
+                        discovery.address in self._discovered_devices,
+                        discovery.service_data is None,
+                        not SERVICE_UUID in discovery.service_data.keys() if discovery.service_data else True
+                    )
                     continue
                 self._discovered_devices[discovery.address] = discovery
                 _LOGGER.debug("Discovered device added: %s", discovery)
 
         if not self._discovered_devices:
+            _LOGGER.debug("Current addresses: %s", current_addresses)
+            _LOGGER.debug("Discovered devices: %s", self._discovered_devices)
             _LOGGER.debug("No unconfigured devices found, aborting")
             return self.async_abort(reason="no_unconfigured_devices")
 

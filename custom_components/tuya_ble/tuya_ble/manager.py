@@ -52,7 +52,9 @@ class AbstractTuyaBLEDeviceManager(ABC):
         save_data: bool = False,
     ) -> TuyaBLEDeviceCredentials | None:
         """Get credentials of the Tuya BLE device."""
-        _LOGGER.debug("Getting device credentials for address: %s, force_update: %s, save_data: %s", address, force_update, save_data)
+        _LOGGER.debug("Getting credentials for device: %s (force=%s, save=%s)", 
+                    address, force_update, save_data)
+        _LOGGER.debug("Current cache contents: %s", _cache)
         pass
 
     @classmethod
