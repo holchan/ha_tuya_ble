@@ -49,26 +49,36 @@ class TuyaBLESwitchMapping:
     getter: TuyaBLESwitchGetter = None
     setter: TuyaBLESwitchSetter = None
 
+    def __post_init__(self):
+        _LOGGER.debug(
+            "Initialized TuyaBLESwitchMapping with dp_id: %d, description: %s",
+            self.dp_id, self.description
+        )
+
 
 def is_fingerbot_in_program_mode(
     self: TuyaBLESwitch, product: TuyaBLEProductInfo
 ) -> bool:
+    _LOGGER.debug("Checking if Fingerbot is in program mode for switch: %s", self)
     result: bool = True
     if product.fingerbot:
         datapoint = self._device.datapoints[product.fingerbot.mode]
         if datapoint:
             result = datapoint.value == 2
+    _LOGGER.debug("Fingerbot in program mode: %s", result)
     return result
 
 
 def is_fingerbot_in_switch_mode(
     self: TuyaBLESwitch, product: TuyaBLEProductInfo
 ) -> bool:
+    _LOGGER.debug("Checking if Fingerbot is in switch mode for switch: %s", self)
     result: bool = True
     if product.fingerbot:
         datapoint = self._device.datapoints[product.fingerbot.mode]
         if datapoint:
             result = datapoint.value == 1
+    _LOGGER.debug("Fingerbot in switch mode: %s", result)
     return result
 
 
@@ -505,14 +515,17 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up the Tuya BLE sensors."""
+    """Set up the Tuya BLE switches."""
+    _LOGGER.debug("Setting up Tuya BLE switches for entry: %s", entry.entry_id)
     data: TuyaBLEData = hass.data[DOMAIN][entry.entry_id]
     mappings = get_mapping_by_device(data.device)
+    _LOGGER.debug("Mappings obtained for device: %s", mappings)
     entities: list[TuyaBLESwitch] = []
     for mapping in mappings:
         if mapping.force_add or data.device.datapoints.has_id(
             mapping.dp_id, mapping.dp_type
         ):
+            _LOGGER.debug("Adding TuyaBLESwitch entity for mapping: %s", mapping)
             entities.append(
                 TuyaBLESwitch(
                     hass,
@@ -523,3 +536,4 @@ async def async_setup_entry(
                 )
             )
     async_add_entities(entities)
+    _LOGGER.debug("Entities added: %s", entities)

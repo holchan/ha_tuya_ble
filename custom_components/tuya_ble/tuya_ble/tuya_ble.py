@@ -48,7 +48,7 @@ from .exceptions import (
     TuyaBLEDeviceError,
     TuyaBLEEnumValueError,
 )
-from .manager import AbstaractTuyaBLEDeviceManager, TuyaBLEDeviceCredentials
+from .manager import AbstractTuyaBLEDeviceManager, TuyaBLEDeviceCredentials
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -250,17 +250,12 @@ class TuyaBLEDeviceFunction:
         super().__setattr__(name, value)
 
 class TuyaBLEDevice:
-    def __init__(
-        self,
-        device_manager: AbstaractTuyaBLEDeviceManager,
-        ble_device: BLEDevice,
-        advertisement_data: AdvertisementData | None = None,
-    ) -> None:
-        """Init the TuyaBLE."""
-        self._device_manager = device_manager
-        self._device_info: TuyaBLEDeviceCredentials | None = None
+    """Representation of a Tuya BLE Device."""
+
+    def __init__(self, manager: AbstractTuyaBLEDeviceManager, ble_device: BLEDevice) -> None:
+        _LOGGER.debug("Initializing TuyaBLEDevice with manager: %s, ble_device: %s", manager, ble_device)
+        self._device_manager = manager
         self._ble_device = ble_device
-        self._advertisement_data = advertisement_data
         self._operation_lock = asyncio.Lock()
         self._connect_lock = asyncio.Lock()
         self._client: BleakClientWithServiceCache | None = None
@@ -270,101 +265,82 @@ class TuyaBLEDevice:
         self._disconnected_callbacks: list[Callable[[], None]] = []
         self._current_seq_num = 1
         self._seq_num_lock = asyncio.Lock()
-
         self._is_bound = False
         self._flags = 0
         self._protocol_version = 2
-
         self._device_version: str = ""
         self._protocol_version_str: str = ""
         self._hardware_version: str = ""
-
         self._device_info: TuyaBLEDeviceCredentials | None = None
-
         self._auth_key: bytes | None = None
         self._local_key: bytes | None = None
         self._login_key: bytes | None = None
         self._session_key: bytes | None = None
-
         self._is_paired = False
-
         self._input_buffer: bytearray | None = None
         self._input_expected_packet_num = 0
         self._input_expected_length = 0
-        self._input_expected_responses: dict[int,
-                                             asyncio.Future[int] | None] = {}
-        # self._input_future: asyncio.Future[int] | None = None
-
+        self._input_expected_responses: dict[int, asyncio.Future[int] | None] = {}
         self._datapoints = TuyaBLEDataPoints(self)
-
         self._function = {}
         self._status_range = {}
+        _LOGGER.debug("TuyaBLEDevice initialized with default values")
 
+    async def initialize(self) -> None:
+        """Initialize the device."""
+        _LOGGER.debug("Initializing device: %s", self.address)
+        if await self._update_device_info():
+            self._decode_advertisement_data()
+        _LOGGER.debug("Device initialized: %s", self.address)
+
+    async def pair(self) -> None:
+        """Pair the device."""
+        _LOGGER.debug("Pairing device: %s", self.address)
+        await self._send_packet(
+            TuyaBLECode.FUN_SENDER_PAIR, self._build_pairing_request()
+        )
+        _LOGGER.debug("Device paired: %s", self.address)
+
+    async def update(self) -> None:
+        """Update the device status."""
+        _LOGGER.debug("Updating device status for: %s", self.address)
+        await self._send_packet(TuyaBLECode.FUN_SENDER_DEVICE_STATUS, bytes())
+        _LOGGER.debug("Device status updated for: %s", self.address)
+
+    async def stop(self) -> None:
+        """Stop the device."""
+        _LOGGER.debug("Stopping device: %s", self.address)
+        await self._execute_disconnect()
+        _LOGGER.debug("Device stopped: %s", self.address)
 
     def set_ble_device_and_advertisement_data(
         self, ble_device: BLEDevice, advertisement_data: AdvertisementData
     ) -> None:
-        """Set the ble device."""
+        """Set the BLE device and advertisement data."""
+        _LOGGER.debug("Setting BLE device and advertisement data for device: %s", ble_device)
         self._ble_device = ble_device
         self._advertisement_data = advertisement_data
-
-    async def initialize(self) -> None:
-        _LOGGER.debug("%s: Initializing", self.address)
-        if await self._update_device_info():
-            self._decode_advertisement_data()
-            
-    def _build_pairing_request(self) -> bytes:
-        result = bytearray()
-
-        result += self._device_info.uuid.encode()
-        result += self._local_key
-        result += self._device_info.device_id.encode()
-        for _ in range(44 - len(result)):
-            result += b"\x00"
-
-        return result
-
-    async def pair(self) -> None:
-        """
-        _LOGGER.debug("%s: Sending pairing request: %s",
-            self.address, data.hex()
-        )
-        """
-        await self._send_packet(
-            TuyaBLECode.FUN_SENDER_PAIR, self._build_pairing_request()
-        )
-
-    async def update(self) -> None:
-        _LOGGER.debug("%s: Updating", self.address)
-        await self._send_packet(TuyaBLECode.FUN_SENDER_DEVICE_STATUS, bytes())
-
-    async def _update_device_info(self) -> bool:
-        if self._device_info is None:
-            if self._device_manager:
-                self._device_info = await self._device_manager.get_device_credentials(
-                    self._ble_device.address, False
-                )
-            if self._device_info:
-                self._local_key = self._device_info.local_key[:6].encode()
-                self._login_key = hashlib.md5(self._local_key).digest()
-
-                self.append_functions(self._device_info.functions, self._device_info.status_range)
-
-        return self._device_info is not None
+        _LOGGER.debug("BLE device and advertisement data set for device: %s", ble_device)
 
     def append_functions(self, function: list[dict], status_range: list[dict]) -> None:
+        """Append functions and status range."""
+        _LOGGER.debug("Appending functions and status range")
         if function:
             for f in function:
                 dpcode = f.get("code")
                 if dpcode:
                     self.function[dpcode] = TuyaBLEDeviceFunction(**f)
+                    _LOGGER.debug("Function appended: %s", dpcode)
                         
             for f in status_range:
                 dpcode = f.get("code")
                 if dpcode:
                     self.status_range[dpcode] = TuyaBLEDeviceFunction(**f)
+                    _LOGGER.debug("Status range appended: %s", dpcode)
 
     def update_description(self, description: TuyaBLEEntityDescription | None) -> None:
+        """Update the device description."""
+        _LOGGER.debug("Updating device description: %s", description)
         if not description:
             return
         
@@ -375,47 +351,51 @@ class TuyaBLEDevice:
                 values = description.values_overrides.values
                 if f := self.function.get(key):
                     f.values = values
+                    _LOGGER.debug("Values override applied for function: %s", key)
 
                 if f := self.status_range.get(key):
                     f.values = values
+                    _LOGGER.debug("Values override applied for status range: %s", key)
 
         if description.values_defaults:
             for key in description.values_defaults:
                 values = description.values_defaults.values
                 if f := self.function.get(key) and not f.values:
                     f.values = values
+                    _LOGGER.debug("Values default applied for function: %s", key)
 
                 if f := self.status_range.get(key) and not f.values:
                     f.values = values
+                    _LOGGER.debug("Values default applied for status range: %s", key)
 
     def _decode_advertisement_data(self) -> None:
+        """Decode advertisement data."""
+        _LOGGER.debug("Decoding advertisement data for device: %s", self.address)
         raw_product_id: bytes | None = None
-        # raw_product_key: bytes | None = None
         raw_uuid: bytes | None = None
         if self._advertisement_data:
             if self._advertisement_data.service_data:
-                service_data = self._advertisement_data.service_data.get(
-                    SERVICE_UUID)
+                service_data = self._advertisement_data.service_data.get(SERVICE_UUID)
                 if service_data and len(service_data) > 1:
                     match service_data[0]:
                         case 0:
                             raw_product_id = service_data[1:]
-                        # case 1:
-                        #    raw_product_key = service_data[1:]
+                            _LOGGER.debug("Raw product ID found: %s", raw_product_id)
 
             if self._advertisement_data.manufacturer_data:
-                manufacturer_data = self._advertisement_data.manufacturer_data.get(
-                    MANUFACTURER_DATA_ID
-                )
+                manufacturer_data = self._advertisement_data.manufacturer_data.get(MANUFACTURER_DATA_ID)
                 if manufacturer_data and len(manufacturer_data) > 6:
                     self._is_bound = (manufacturer_data[0] & 0x80) != 0
                     self._protocol_version = manufacturer_data[1]
                     raw_uuid = manufacturer_data[6:]
+                    _LOGGER.debug("Manufacturer data decoded: is_bound=%s, protocol_version=%s, raw_uuid=%s",
+                                  self._is_bound, self._protocol_version, raw_uuid)
                     if raw_product_id:
                         key = hashlib.md5(raw_product_id).digest()
                         cipher = AES.new(key, AES.MODE_CBC, key)
                         raw_uuid = cipher.decrypt(raw_uuid)
                         self._uuid = raw_uuid.decode("utf-8")
+                        _LOGGER.debug("UUID decoded: %s", self._uuid)
 
     @property
     def address(self) -> str:
@@ -514,7 +494,7 @@ class TuyaBLEDevice:
     @property
     def status(self) -> dict[str, Any]:
         """Get current datapoints values."""
-
+        _LOGGER.debug("Getting current datapoints values for device: %s", self.address)
         result = {}
         dps = self.datapoints._datapoints
         if dps:
@@ -526,6 +506,7 @@ class TuyaBLEDevice:
                     v = dps.get(dpid)
                     if v:
                         result[dpcode] = v.value
+                        _LOGGER.debug("Datapoint value for %s: %s", dpcode, v.value)
         return result
 
     def get_or_create_datapoint(
@@ -534,7 +515,11 @@ class TuyaBLEDevice:
         type: TuyaBLEDataPointType,
         value: bytes | bool | int | str | None = None,
     ) -> TuyaBLEDataPoint:
-        """Get datapoints exposed by device."""
+        """Get or create a datapoint."""
+        _LOGGER.debug("Getting or creating datapoint with id: %d, type: %s, value: %s", id, type, value)
+        datapoint = self._datapoints.get_or_create(id, type, value)
+        _LOGGER.debug("Datapoint obtained: %s", datapoint)
+        return datapoint
 
     def _fire_connected_callbacks(self) -> None:
         """Fire the callbacks."""

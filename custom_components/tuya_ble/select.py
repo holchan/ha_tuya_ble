@@ -314,41 +314,44 @@ class TuyaBLESelect(TuyaBLEEntity, SelectEntity):
         product: TuyaBLEProductInfo,
         mapping: TuyaBLESelectMapping,
     ) -> None:
-        super().__init__(
-            hass,
-            coordinator,
-            device,
-            product,
-            mapping.description
+        _LOGGER.debug(
+            "Initializing TuyaBLESelect with device: %s, product: %s, mapping: %s",
+            device, product, mapping
         )
+        super().__init__(hass, coordinator, device, product, mapping.description)
         self._mapping = mapping
-        self._attr_options = mapping.description.options
+        _LOGGER.debug("TuyaBLESelect initialized with mapping: %s", self._mapping)
 
     @property
     def current_option(self) -> str | None:
-        """Return the selected entity option to represent the entity state."""
-        # Raw value
-        value: str | None = None
+        """Return the current selected option."""
+        _LOGGER.debug("Getting current option for device: %s", self._device)
         datapoint = self._device.datapoints[self._mapping.dp_id]
         if datapoint:
-            value = datapoint.value
-            if value >= 0 and value < len(self._attr_options):
-                return self._attr_options[value]
-            else:
-                return value
+            current_option = datapoint.value
+            _LOGGER.debug("Current option obtained from datapoint: %s", current_option)
+            return current_option
+        _LOGGER.debug("No datapoint found, returning None")
         return None
 
-    def select_option(self, value: str) -> None:
+    def select_option(self, option: str) -> None:
         """Change the selected option."""
-        if value in self._attr_options:
-            int_value = self._attr_options.index(value)
-            datapoint = self._device.datapoints.get_or_create(
-                self._mapping.dp_id,
-                TuyaBLEDataPointType.DT_ENUM,
-                int_value,
-            )
-            if datapoint:
-                self._hass.create_task(datapoint.set_value(int_value))
+        _LOGGER.debug("Selecting option for device: %s to %s", self._device, option)
+        datapoint = self._device.datapoints.get_or_create(
+            self._mapping.dp_id,
+            TuyaBLEDataPointType.DT_ENUM,
+            option,
+        )
+        if datapoint:
+            _LOGGER.debug("Setting datapoint value to: %s", option)
+            self._hass.create_task(datapoint.set_value(option))
+
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        result = super().available
+        _LOGGER.debug("Checking availability for device: %s, result: %s", self._device, result)
+        return result
 
 
 async def async_setup_entry(
@@ -356,20 +359,25 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up the Tuya BLE sensors."""
+    """Set up the Tuya BLE selects."""
+    _LOGGER.debug("Setting up Tuya BLE selects for entry: %s", entry.entry_id)
     data: TuyaBLEData = hass.data[DOMAIN][entry.entry_id]
     mappings = get_mapping_by_device(data.device)
+    _LOGGER.debug("Mappings obtained for device: %s", mappings)
     entities: list[TuyaBLESelect] = []
     for mapping in mappings:
-        if (
-            mapping.force_add or
-            data.device.datapoints.has_id(mapping.dp_id, mapping.dp_type)
+        if mapping.force_add or data.device.datapoints.has_id(
+            mapping.dp_id, mapping.dp_type
         ):
-            entities.append(TuyaBLESelect(
-                hass,
-                data.coordinator,
-                data.device,
-                data.product,
-                mapping,
-            ))
+            _LOGGER.debug("Adding TuyaBLESelect entity for mapping: %s", mapping)
+            entities.append(
+                TuyaBLESelect(
+                    hass,
+                    data.coordinator,
+                    data.device,
+                    data.product,
+                    mapping,
+                )
+            )
     async_add_entities(entities)
+    _LOGGER.debug("Entities added: %s", entities)

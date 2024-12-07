@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 import logging
 import json
 import copy
+import asyncio
 
 from typing import Any, Callable, cast
 from enum import IntEnum, StrEnum, Enum
@@ -39,6 +40,11 @@ from .tuya_ble import (
     TuyaBLEDevice, 
     TuyaBLEEntityDescription,
 )
+
+from homeassistant.exceptions import HomeAssistantError
+from bleak_retry_connector import BleakOutOfConnectionSlotsError, establish_connection
+import async_timeout
+from datetime import timedelta
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -449,6 +455,7 @@ LIGHTS["pc"] = LIGHTS["kg"]
 # update the category mapping using the product mapping overrides
 # both tuple should have the same size
 def update_mapping(category_description: tuple[TuyaLightEntityDescription], mapping: tuple[TuyaLightEntityDescription]) -> tuple[TuyaLightEntityDescription]:
+    _LOGGER.debug("Updating mapping with category_description: %s, mapping: %s", category_description, mapping)
     m = tuple()
     l = list(category_description)
     for desc in mapping:
@@ -497,6 +504,7 @@ def update_mapping(category_description: tuple[TuyaLightEntityDescription], mapp
     return m
 
 def get_mapping_by_device(device: TuyaBLEDevice) -> tuple[TuyaLightEntityDescription]:
+    _LOGGER.debug("Getting mapping by device: %s", device)
     category_mapping = LIGHTS.get(device.category)
 
     category = ProductsMapping.get(device.category)
@@ -509,20 +517,7 @@ def get_mapping_by_device(device: TuyaBLEDevice) -> tuple[TuyaLightEntityDescrip
 
 
 class TuyaBLELight(TuyaBLEEntity, LightEntity):
-    """Representation of a Tuya BLE Light."""
-
-    entity_description: TuyaLightEntityDescription
-
-    _brightness_max: IntegerTypeData | None = None
-    _brightness_min: IntegerTypeData | None = None
-    _brightness: IntegerTypeData | None = None
-    _color_data_dpcode: DPCode | None = None
-    _color_data_type: ColorTypeData | None = None
-    _color_mode_dpcode: DPCode | None = None
-    _color_temp: IntegerTypeData | None = None
-
-    _attr_has_entity_name = True
-    _attr_name = None
+    """Tuya BLE light device."""
 
     def __init__(
         self,
@@ -530,365 +525,269 @@ class TuyaBLELight(TuyaBLEEntity, LightEntity):
         coordinator: DataUpdateCoordinator,
         device: TuyaBLEDevice,
         product: TuyaBLEProductInfo,
-        description: TuyaLightEntityDescription
-
+        description: TuyaBLEEntityDescription,
     ) -> None:
+        """Initialize the light."""
+        _LOGGER.debug("Initializing TuyaBLELight with device: %s, product: %s, description: %s", device, product, description)
         super().__init__(hass, coordinator, device, product, description)
-
-        self._attr_unique_id = f"{super().unique_id}{description.key}"
-        self._attr_supported_color_modes: set[ColorMode] = set()
         
-        # Update/override the device info from our description
-        device.update_description(description)
+        self._attr_available = False
+        self._attr_supported_color_modes = {ColorMode.ONOFF}
+        self._registered = False
+        self._init_retry_count = 0
+        self._max_init_retries = 3
+        _LOGGER.debug("TuyaBLELight initialized with available: %s, supported_color_modes: %s", self._attr_available, self._attr_supported_color_modes)
 
-        _LOGGER.debug("%s : sunctions: %s", device.name, device.function)
-        
-        # Determine DPCodes
-        self._color_mode_dpcode = self.find_dpcode(
-            description.color_mode, prefer_function=True
+    async def async_added_to_hass(self) -> None:
+        """Run when entity is added to hass."""
+        _LOGGER.debug("Entity added to hass for device: %s", self._device.address)
+        await super().async_added_to_hass()
+        try:
+            await self._verify_registration()
+        except Exception as err:
+            _LOGGER.error(
+                "%s: Failed to verify device registration: %s",
+                self._device.address,
+                str(err),
+                exc_info=True
+            )
+            self._attr_available = False
+        _LOGGER.debug(
+            "%s: Light entity added to HASS - unique_id: %s, registered: %s, available: %s",
+            self._device.address,
+            self._attr_unique_id,
+            self._registered,
+            self._attr_available
         )
 
-        if int_type := self.find_dpcode(
-            description.brightness, dptype=DPType.INTEGER, prefer_function=True
-        ):
-            self._brightness = int_type
-            self._attr_supported_color_modes.add(ColorMode.BRIGHTNESS)
-            self._brightness_max = self.find_dpcode(
-                description.brightness_max, dptype=DPType.INTEGER
-            )
-            self._brightness_min = self.find_dpcode(
-                description.brightness_min, dptype=DPType.INTEGER
-            )
-
-        if int_type := self.find_dpcode(
-            description.color_temp, dptype=DPType.INTEGER, prefer_function=True
-        ):
-            self._color_temp = int_type
-            self._attr_supported_color_modes.add(ColorMode.COLOR_TEMP)
-
-        if (
-            dpcode := self.find_dpcode(description.color_data, prefer_function=True)
-        ) and (self.get_dptype(dpcode) == DPType.JSON or self.get_dptype(dpcode) == DPType.STRING):
-            self._color_data_dpcode = dpcode
-            self._attr_supported_color_modes.add(ColorMode.HS)
-            if dpcode in self.device.function:
-                values = cast(str, self.device.function[dpcode].values)
-            else:
-                values = self.device.status_range[dpcode].values
-
-            function_data = values
-            if isinstance(function_data, str):
-                function_data = json.loads(function_data)
-
-            # Fetch color data type information
-            if function_data and function_data.get("h"):
-                self._color_data_type = ColorTypeData(
-                    h_type=IntegerTypeData(dpcode, **function_data["h"]),
-                    s_type=IntegerTypeData(dpcode, **function_data["s"]),
-                    v_type=IntegerTypeData(dpcode, **function_data["v"]),
+    async def _verify_registration(self) -> None:
+        """Verify device registration status."""
+        _LOGGER.debug(
+            "%s: Starting registration verification (attempt %d/%d)",
+            self._device.address,
+            self._init_retry_count + 1,
+            self._max_init_retries
+        )
+        
+        while not self._registered and self._init_retry_count < self._max_init_retries:
+            try:
+                async with asyncio.timeout(30):
+                    _LOGGER.debug(
+                        "%s: Attempting to verify registration with device",
+                        self._device.address
+                    )
+                    
+                    # Check if device is connected and authenticated
+                    if not self._device.is_connected:
+                        _LOGGER.debug("%s: Device not connected, attempting to connect", self._device.address)
+                        await self._device.connect()
+                    
+                    if not await self._device.authenticate():
+                        _LOGGER.error("%s: Failed to authenticate with device", self._device.address)
+                        raise HomeAssistantError("Failed to authenticate with device")
+                        
+                    self._registered = True
+                    self._attr_available = True
+                    
+                    _LOGGER.debug(
+                        "%s: Device successfully registered and available",
+                        self._device.address
+                    )
+                    return
+                    
+            except asyncio.TimeoutError:
+                self._init_retry_count += 1
+                _LOGGER.warning(
+                    "%s: Registration verification timed out (attempt %d/%d)",
+                    self._device.address,
+                    self._init_retry_count,
+                    self._max_init_retries
                 )
-            else:
-                # If no type is found, use a default one
-                self._color_data_type = self.entity_description.default_color_type
-                if self._color_data_dpcode == DPCode.COLOUR_DATA_V2 or (
-                    self._brightness and self._brightness.max > 255
-                ):
-                    self._color_data_type = DEFAULT_COLOR_TYPE_DATA_V2
+            except Exception as err:
+                self._init_retry_count += 1
+                _LOGGER.error(
+                    "%s: Failed to verify device registration: %s",
+                    self._device.address,
+                    self._init_retry_count,
+                    self._max_init_retries,
+                    str(err),
+                    exc_info=True
+                )
+                
+        if not self._registered:
+            _LOGGER.error(
+                "%s: Device registration verification failed after %d attempts",
+                self._device.address,
+                self._max_init_retries
+            )
 
-        if not self._attr_supported_color_modes:
-            self._attr_supported_color_modes = {ColorMode.ONOFF}
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Turn the light on."""
+        _LOGGER.debug(
+            "%s: Turn on requested with parameters: %s",
+            self._device.address,
+            kwargs
+        )
+        
+        if not self._registered:
+            _LOGGER.error(
+                "%s: Cannot turn on - device not registered",
+                self._device.address
+            )
+            raise HomeAssistantError(
+                f"{self._device.address}: Cannot control unregistered device"
+            )
+            
+        try:
+            _LOGGER.debug(
+                "%s: Executing turn on command",
+                self._device.address
+            )
+            await super().async_turn_on(**kwargs)
+            _LOGGER.debug(
+                "%s: Turn on successful",
+                self._device.address
+            )
+        except Exception as err:
+            self._attr_available = False
+            self.async_write_ha_state()
+            _LOGGER.error(
+                "%s: Failed to turn on: %s",
+                self._device.address,
+                str(err),
+                exc_info=True
+            )
+            raise HomeAssistantError(f"Failed to turn on: {str(err)}") from err
 
-    @callback
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Turn the light off."""
+        _LOGGER.debug(
+            "%s: Turn off requested",
+            self._device.address
+        )
+        
+        if not self._registered:
+            _LOGGER.error(
+                "%s: Cannot turn off - device not registered",
+                self._device.address
+            )
+            raise HomeAssistantError(
+                f"{self._device.address}: Cannot control unregistered device"
+            )
+            
+        try:
+            _LOGGER.debug(
+                "%s: Executing turn off command",
+                self._device.address
+            )
+            await super().async_turn_off(**kwargs)
+            _LOGGER.debug(
+                "%s: Turn off successful",
+                self._device.address
+            )
+        except Exception as err:
+            self._attr_available = False 
+            self.async_write_ha_state()
+            _LOGGER.error(
+                "%s: Failed to turn off: %s",
+                self._device.address,
+                str(err),
+                exc_info=True
+            )
+            raise HomeAssistantError(f"Failed to turn off: {str(err)}") from err
+
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        self.async_write_ha_state()
-
-    @property
-    def is_on(self) -> bool:
-        """Return true if light is on."""
-        return self.device.status.get(self.entity_description.key, False)
-
-    def turn_on(self, **kwargs: Any) -> None:
-        """Turn on or control the light."""
-        commands = [{"code": self.entity_description.key, "value": True}]
-
-        if self._color_temp and ATTR_COLOR_TEMP in kwargs:
-            if self._color_mode_dpcode:
-                commands += [
-                    {
-                        "code": self._color_mode_dpcode,
-                        "value": WorkMode.WHITE,
-                    },
-                ]
-
-            commands += [
-                {
-                    "code": self._color_temp.dpcode,
-                    "value": round(
-                        self._color_temp.remap_value_from(
-                            kwargs[ATTR_COLOR_TEMP],
-                            self.min_mireds,
-                            self.max_mireds,
-                            reverse=True,
-                        )
-                    ),
-                },
-            ]
-
-        if self._color_data_type and (
-            ATTR_HS_COLOR in kwargs
-            or (
-                ATTR_BRIGHTNESS in kwargs
-                and self.color_mode == ColorMode.HS
-                and ATTR_COLOR_TEMP not in kwargs
-            )
-        ):
-            if self._color_mode_dpcode:
-                commands += [
-                    {
-                        "code": self._color_mode_dpcode,
-                        "value": WorkMode.COLOUR,
-                    },
-                ]
-
-            if not (brightness := kwargs.get(ATTR_BRIGHTNESS)):
-                brightness = self.brightness or 0
-
-            if not (color := kwargs.get(ATTR_HS_COLOR)):
-                color = self.hs_color or (0, 0)
-
-            h = self._color_data_type.h_type.remap_value_from(
-                                    color[0], 0, 360
-                                )
-            s = self._color_data_type.s_type.remap_value_from(
-                                    color[1], 0, 100
-                                )
-            v = self._color_data_type.v_type.remap_value_from(
-                                    brightness
-                                )
-
-            # Encoding for RGB from localtuya light component
-            if self.__is_color_rgb_encoded():
-                rgb = color_util.color_hsv_to_RGB(
-                    color[0],
-                    color[1],
-                    int(brightness),
-                )
-                colorstr = "{:02x}{:02x}{:02x}{:04x}{:02x}{:02x}".format(
-                    round(rgb[0]),
-                    round(rgb[1]),
-                    round(rgb[2]),
-                    round(h),
-                    round(s),
-                    round(v),
-                )
-            else:
-                colorstr = "{:04x}{:04x}{:04x}".format(
-                    round(h), round(s), round(v)
-                )
-
-            commands += [
-                {
-                    "code": self._color_data_dpcode,
-                    #!! Color encoding is different from the cloud Light compoonent
-                    #!! not sure that the encoding is the same for all light categories
-                    "value": colorstr,
-                },
-            ]
-
-        elif ATTR_BRIGHTNESS in kwargs and self._brightness:
-            brightness = kwargs[ATTR_BRIGHTNESS]
-
-            # If there is a min/max value, the brightness is actually limited.
-            # Meaning it is actually not on a 0-255 scale.
-            if (
-                self._brightness_max is not None
-                and self._brightness_min is not None
-                and (
-                    brightness_max := self.device.status.get(
-                        self._brightness_max.dpcode
-                    )
-                )
-                is not None
-                and (
-                    brightness_min := self.device.status.get(
-                        self._brightness_min.dpcode
-                    )
-                )
-                is not None
-            ):
-                # Remap values onto our scale
-                brightness_max = self._brightness_max.remap_value_to(brightness_max)
-                brightness_min = self._brightness_min.remap_value_to(brightness_min)
-
-                # Remap the brightness value from their min-max to our 0-255 scale
-                brightness = remap_value(
-                    brightness,
-                    to_min=brightness_min,
-                    to_max=brightness_max,
-                )
-
-            commands += [
-                {
-                    "code": self._brightness.dpcode,
-                    "value": round(self._brightness.remap_value_from(brightness)),
-                },
-            ]
-
-        self._send_command(commands)
-
-    def turn_off(self, **kwargs: Any) -> None:
-        """Instruct the light to turn off."""
-
-        self._send_command([{"code": self.entity_description.key, "value": False}])
-
-
-    @property
-    def brightness(self) -> int | None:
-        """Return the brightness of the light."""
-        # If the light is currently in color mode, extract the brightness from the color data
-        if self.color_mode == ColorMode.HS and (color_data := self._get_color_data()):
-            return color_data.brightness
-
-        if not self._brightness:
-            return None
-
-        brightness = self.device.status.get(self._brightness.dpcode)
-        if brightness is None:
-            return None
-
-        # Remap value to our scale
-        brightness = self._brightness.remap_value_to(brightness)
-
-        # If there is a min/max value, the brightness is actually limited.
-        # Meaning it is actually not on a 0-255 scale.
-        if (
-            self._brightness_max is not None
-            and self._brightness_min is not None
-            and (brightness_max := self.device.status.get(self._brightness_max.dpcode))
-            is not None
-            and (brightness_min := self.device.status.get(self._brightness_min.dpcode))
-            is not None
-        ):
-            # Remap values onto our scale
-            brightness_max = self._brightness_max.remap_value_to(brightness_max)
-            brightness_min = self._brightness_min.remap_value_to(brightness_min)
-
-            # Remap the brightness value from their min-max to our 0-255 scale
-            brightness = remap_value(
-                brightness,
-                from_min=brightness_min,
-                from_max=brightness_max,
-            )
-
-        return round(brightness)
-
-    @property
-    def color_temp(self) -> int | None:
-        """Return the color_temp of the light."""
-        if not self._color_temp:
-            return None
-
-        temperature = self._device.status.get(self._color_temp.dpcode)
-        if temperature is None:
-            return None
-
-        return round(
-            self._color_temp.remap_value_to(
-                temperature, self.min_mireds, self.max_mireds, reverse=True
-            )
+        _LOGGER.debug(
+            "%s: Handling coordinator update - previous state: %s, new state: %s, connection state: %s",
+            self._device.address,
+            getattr(self, '_attr_state', 'Unknown'),
+            self._device.status if hasattr(self._device, 'status') else 'Unknown',
+            "Connected" if self._device.is_connected else "Disconnected"
         )
-
-    @property
-    def hs_color(self) -> tuple[float, float] | None:
-        """Return the hs_color of the light."""
-        if self._color_data_dpcode is None or not (
-            color_data := self._get_color_data()
-        ):
-            return None
-        return color_data.hs_color
-
-    @property
-    def color_mode(self) -> ColorMode:
-        """Return the color_mode of the light."""
-        # We consider it to be in HS color mode, when work mode is anything
-        # else than "white".
-        if (
-            self._color_mode_dpcode
-            and self.device.status.get(self._color_mode_dpcode) != WorkMode.WHITE
-        ):
-            return ColorMode.HS
-        if self._color_temp:
-            return ColorMode.COLOR_TEMP
-        if self._brightness:
-            return ColorMode.BRIGHTNESS
-        return ColorMode.ONOFF
-
-    def _get_color_data(self) -> ColorData | None:
-        """Get current color data from device."""
-        if (
-            self._color_data_type is None
-            or self._color_data_dpcode is None
-            or self._color_data_dpcode not in self.device.status
-        ):
-            return None
-
-        if not (status_data := self.device.status[self._color_data_dpcode]):
-            return None
-
-        #!! Color encoding is different from the cloud Light compoonent
-        #!! not sure that the encoding is the same for all light categories
-        if len(status_data) == 12:
-            h = float(int(status_data[:4], 16))
-            s = float(int(status_data[4:8], 16))
-            v = float(int(status_data[8:], 16))
-            return ColorData(
-                    type_data=self._color_data_type,
-                    h_value=h,
-                    s_value=s,
-                    v_value=v,
-                )   
-        elif len(status_data) > 12:
-            # Encoding for RGB devices from localtuya light component
-            h = int(status_data[6:10], 16)
-            s = int(status_data[10:12], 16)
-            v = int(status_data[12:14], 16)
-            return ColorData(
-                    type_data=self._color_data_type,
-                    h_value=h,
-                    s_value=s,
-                    v_value=v,
-            )
-
-        return None
-
-    def __is_color_rgb_encoded(self):
-        if not (status_data := self.device.status[self._color_data_dpcode]):
-            return False
-
-        if not (isinstance(status_data, str)):
-            return False
-
-        return len(status_data) > 12
+        super()._handle_coordinator_update()
 
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up the Tuya BLE sensors."""
+    """Set up the Tuya BLE lights."""
+    _LOGGER.debug(
+        "Setting up lights for device %s with product info: %s",
+        entry.entry_id,
+        hass.data[DOMAIN][entry.entry_id].product
+    )
+
     data: TuyaBLEData = hass.data[DOMAIN][entry.entry_id]
-    descs = get_mapping_by_device(data.device)
+
+    try:
+        descs = get_mapping_by_device(data.device)
+        _LOGGER.debug(
+            "%s: Got light descriptions: %s",
+            data.device.address,
+            descs
+        )
+    except Exception as e:
+        _LOGGER.error(
+            "%s: Failed to get light descriptions: %s",
+            data.device.address,
+            str(e),
+            exc_info=True
+        )
+        return
+
     entities: list[TuyaBLELight] = []
 
     for desc in descs:
-        entities.append(
-            TuyaBLELight(
-                    hass,
-                    data.coordinator,
-                    data.device,
-                    data.product,
-                    desc,
-                )
+        _LOGGER.debug(
+            "%s: Creating light entity with description: %s",
+            data.device.address,
+            desc
         )
-    async_add_entities(entities)
+        try:
+            entity = TuyaBLELight(
+                hass,
+                data.coordinator,
+                data.device,
+                data.product,
+                desc,
+            )
+            entities.append(entity)
+            _LOGGER.debug(
+                "%s: Successfully created light entity: %s",
+                data.device.address,
+                entity._attr_unique_id
+            )
+        except Exception as e:
+            _LOGGER.error(
+                "%s: Failed to create light entity: %s",
+                data.device.address,
+                str(e),
+                exc_info=True
+            )
+
+    if entities:
+        _LOGGER.debug(
+            "%s: Adding %d light entities",
+            data.device.address,
+            len(entities)
+        )
+        try:
+            async_add_entities(entities)
+            _LOGGER.debug(
+                "%s: Successfully added light entities to HASS",
+                data.device.address
+            )
+        except Exception as e:
+            _LOGGER.error(
+                "%s: Failed to add light entities to HASS: %s",
+                data.device.address,
+                str(e),
+                exc_info=True
+            )
+    else:
+        _LOGGER.warning(
+            "%s: No light entities created",
+            data.device.address
+        )

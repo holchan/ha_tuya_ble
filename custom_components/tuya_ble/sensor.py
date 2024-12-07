@@ -59,6 +59,12 @@ class TuyaBLESensorMapping:
     icons: list[str] | None = None
     is_available: TuyaBLESensorIsAvailable = None
 
+    def __post_init__(self):
+        _LOGGER.debug(
+            "Initialized TuyaBLESensorMapping with dp_id: %d, description: %s",
+            self.dp_id, self.description
+        )
+
 
 @dataclass
 class TuyaBLEBatteryMapping(TuyaBLESensorMapping):
@@ -86,17 +92,21 @@ class TuyaBLETemperatureMapping(TuyaBLESensorMapping):
 
 
 def is_co2_alarm_enabled(self: TuyaBLESensor, product: TuyaBLEProductInfo) -> bool:
+    _LOGGER.debug("Checking if CO2 alarm is enabled for sensor: %s", self)
     result: bool = True
     datapoint = self._device.datapoints[13]
     if datapoint:
         result = bool(datapoint.value)
+    _LOGGER.debug("CO2 alarm enabled: %s", result)
     return result
 
 
 def battery_enum_getter(self: TuyaBLESensor) -> None:
+    _LOGGER.debug("Getting battery enum value for sensor: %s", self)
     datapoint = self._device.datapoints[104]
     if datapoint:
         self._attr_native_value = datapoint.value * 20.0
+        _LOGGER.debug("Battery enum value set to: %s", self._attr_native_value)
 
 
 @dataclass
@@ -425,7 +435,7 @@ def get_mapping_by_device(device: TuyaBLEDevice) -> list[TuyaBLESensorMapping]:
 
 
 class TuyaBLESensor(TuyaBLEEntity, SensorEntity):
-    """Representation of a Tuya BLE sensor."""
+    """Representation of a Tuya BLE Sensor."""
 
     def __init__(
         self,
@@ -435,46 +445,41 @@ class TuyaBLESensor(TuyaBLEEntity, SensorEntity):
         product: TuyaBLEProductInfo,
         mapping: TuyaBLESensorMapping,
     ) -> None:
+        _LOGGER.debug(
+            "Initializing TuyaBLESensor with device: %s, product: %s, mapping: %s",
+            device, product, mapping
+        )
         super().__init__(hass, coordinator, device, product, mapping.description)
         self._mapping = mapping
+        _LOGGER.debug("TuyaBLESensor initialized with mapping: %s", self._mapping)
 
-    @callback
-    def _handle_coordinator_update(self) -> None:
-        """Handle updated data from the coordinator."""
-        if self._mapping.getter is not None:
-            self._mapping.getter(self)
-        else:
-            datapoint = self._device.datapoints[self._mapping.dp_id]
-            if datapoint:
-                if datapoint.type == TuyaBLEDataPointType.DT_ENUM:
-                    if self.entity_description.options is not None:
-                        if datapoint.value >= 0 and datapoint.value < len(
-                            self.entity_description.options
-                        ):
-                            self._attr_native_value = self.entity_description.options[
-                                datapoint.value
-                            ]
-                        else:
-                            self._attr_native_value = datapoint.value
-                    if self._mapping.icons is not None:
-                        if datapoint.value >= 0 and datapoint.value < len(
-                            self._mapping.icons
-                        ):
-                            self._attr_icon = self._mapping.icons[datapoint.value]
-                elif datapoint.type == TuyaBLEDataPointType.DT_VALUE:
-                    self._attr_native_value = (
-                        datapoint.value / self._mapping.coefficient
-                    )
-                else:
-                    self._attr_native_value = datapoint.value
-        self.async_write_ha_state()
+    @property
+    def native_value(self) -> float | None:
+        """Return the entity value to represent the entity state."""
+        _LOGGER.debug("Getting native value for sensor: %s", self)
+        if self._mapping.getter:
+            value = self._mapping.getter(self)
+            _LOGGER.debug("Native value obtained using getter: %s", value)
+            return value
+
+        datapoint = self._device.datapoints[self._mapping.dp_id]
+        if datapoint:
+            value = datapoint.value / self._mapping.coefficient
+            _LOGGER.debug("Native value obtained from datapoint: %s", value)
+            return value
+
+        default_value = self._mapping.description.native_min_value
+        _LOGGER.debug("Returning default native value: %s", default_value)
+        return default_value
 
     @property
     def available(self) -> bool:
         """Return if entity is available."""
         result = super().available
+        _LOGGER.debug("Checking availability for sensor: %s, initial result: %s", self, result)
         if result and self._mapping.is_available:
             result = self._mapping.is_available(self, self._product)
+            _LOGGER.debug("Availability determined by mapping: %s", result)
         return result
 
 
@@ -484,21 +489,16 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the Tuya BLE sensors."""
+    _LOGGER.debug("Setting up Tuya BLE sensors for entry: %s", entry.entry_id)
     data: TuyaBLEData = hass.data[DOMAIN][entry.entry_id]
     mappings = get_mapping_by_device(data.device)
-    entities: list[TuyaBLESensor] = [
-        TuyaBLESensor(
-            hass,
-            data.coordinator,
-            data.device,
-            data.product,
-            rssi_mapping,
-        )
-    ]
+    _LOGGER.debug("Mappings obtained for device: %s", mappings)
+    entities: list[TuyaBLESensor] = []
     for mapping in mappings:
         if mapping.force_add or data.device.datapoints.has_id(
             mapping.dp_id, mapping.dp_type
         ):
+            _LOGGER.debug("Adding TuyaBLESensor entity for mapping: %s", mapping)
             entities.append(
                 TuyaBLESensor(
                     hass,
@@ -509,3 +509,4 @@ async def async_setup_entry(
                 )
             )
     async_add_entities(entities)
+    _LOGGER.debug("Entities added: %s", entities)

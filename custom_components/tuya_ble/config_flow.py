@@ -60,12 +60,17 @@ async def _try_login(
     response: dict[Any, Any] | None
     data: dict[str, Any]
 
-    country = [
-        country
-        for country in TUYA_COUNTRIES
-        if country.name == user_input[CONF_COUNTRY_CODE]
-    ][0]
-    _LOGGER.debug("Selected country: %s", country)
+    try:
+        country = [
+            country
+            for country in TUYA_COUNTRIES
+            if country.name == user_input[CONF_COUNTRY_CODE]
+        ][0]
+        _LOGGER.debug("Selected country: %s", country)
+    except IndexError:
+        _LOGGER.error("Country code not found in TUYA_COUNTRIES: %s", user_input[CONF_COUNTRY_CODE])
+        errors["base"] = "invalid_country_code"
+        return None
 
     data = {
         CONF_ENDPOINT: country.endpoint,
@@ -180,7 +185,6 @@ class TuyaBLEOptionsFlow(OptionsFlowWithConfigEntry):
         _LOGGER.debug("Options flow login step with user input: %s", user_input)
         errors = {}
         placeholders = {}
-        placeholders: dict[str, Any] = {}
         credentials: TuyaBLEDeviceCredentials | None = None
         address: str | None = self.config_entry.data.get(CONF_ADDRESS)
 

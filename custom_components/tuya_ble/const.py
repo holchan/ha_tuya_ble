@@ -3,10 +3,13 @@ from __future__ import annotations
 
 from enum import StrEnum
 from typing_extensions import Final
+import logging
 
 from tuya_iot import TuyaCloudOpenAPIEndpoint
 
 from dataclasses import dataclass
+
+_LOGGER = logging.getLogger(__name__)
 
 DOMAIN: Final = "tuya_ble"
 

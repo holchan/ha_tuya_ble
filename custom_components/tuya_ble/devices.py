@@ -1,7 +1,7 @@
 """The Tuya BLE integration."""
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 
 import logging
 from homeassistant.const import CONF_ADDRESS, CONF_DEVICE_ID
@@ -532,39 +532,57 @@ def get_product_info_by_ids(
 
 
 def get_device_product_info(device: TuyaBLEDevice) -> TuyaBLEProductInfo | None:
-    return get_product_info_by_ids(device.category, device.product_id)
+    """Get product info for a device."""
+    _LOGGER.debug("Getting product info for device: %s", device)
+    product_info = get_product_info_by_ids(device.category, device.product_id)
+    _LOGGER.debug("Product info retrieved: %s", product_info)
+    return product_info
 
 
 def get_short_address(address: str) -> str:
+    """Get a short version of the address."""
+    _LOGGER.debug("Getting short address for: %s", address)
     results = address.replace("-", ":").upper().split(":")
-    return f"{results[-3]}{results[-2]}{results[-1]}"[-6:]
+    short_address = f"{results[-3]}{results[-2]}{results[-1]}"[-6:]
+    _LOGGER.debug("Short address: %s", short_address)
+    return short_address
 
 
 async def get_device_readable_name(
     discovery_info: BluetoothServiceInfoBleak,
-    manager: AbstaractTuyaBLEDeviceManager | None,
+    manager: HASSTuyaBLEDeviceManager | None,
 ) -> str:
+    """Get a human-readable name for a device."""
+    _LOGGER.debug("Getting readable name for device with discovery info: %s", discovery_info)
     credentials: TuyaBLEDeviceCredentials | None = None
     product_info: TuyaBLEProductInfo | None = None
     if manager:
         credentials = await manager.get_device_credentials(discovery_info.address)
+        _LOGGER.debug("Device credentials obtained: %s", credentials)
         if credentials:
             product_info = get_product_info_by_ids(
                 credentials.category,
                 credentials.product_id,
             )
+            _LOGGER.debug("Product info obtained: %s", product_info)
     short_address = get_short_address(discovery_info.address)
     if product_info:
-        return "%s %s" % (product_info.name, short_address)
-    if credentials:
-        return "%s %s" % (credentials.device_name, short_address)
-    return "%s %s" % (discovery_info.device.name, short_address)
+        readable_name = "%s %s" % (product_info.name, short_address)
+    elif credentials:
+        readable_name = "%s %s" % (credentials.device_name, short_address)
+    else:
+        readable_name = "%s %s" % (discovery_info.device.name, short_address)
+    _LOGGER.debug("Readable name for device: %s", readable_name)
+    return readable_name
 
 
 def get_device_info(device: TuyaBLEDevice) -> DeviceInfo | None:
+    """Get device info."""
+    _LOGGER.debug("Getting device info for: %s", device)
     product_info = None
     if device.category and device.product_id:
         product_info = get_product_info_by_ids(device.category, device.product_id)
+        _LOGGER.debug("Product info obtained: %s", product_info)
     product_name: str
     if product_info:
         product_name = product_info.name
@@ -593,5 +611,6 @@ def get_device_info(device: TuyaBLEDevice) -> DeviceInfo | None:
             device.protocol_version,
         ),
     )
+    _LOGGER.debug("Device info: %s", result)
     return result
 

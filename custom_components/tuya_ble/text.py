@@ -46,11 +46,13 @@ def is_fingerbot_in_program_mode(
     self: TuyaBLEText,
     product: TuyaBLEProductInfo,
 ) -> bool:
+    _LOGGER.debug("Checking if Fingerbot is in program mode for text entity: %s", self)
     result: bool = True
     if product.fingerbot:
         datapoint = self._device.datapoints[product.fingerbot.mode]
         if datapoint:
             result = datapoint.value == 2
+    _LOGGER.debug("Fingerbot in program mode: %s", result)
     return result
 
 
@@ -58,6 +60,7 @@ def get_fingerbot_program(
     self: TuyaBLEText,
     product: TuyaBLEProductInfo,
 ) -> str | None:
+    _LOGGER.debug("Getting Fingerbot program for text entity: %s", self)
     result: float | None = None
     if product.fingerbot and product.fingerbot.program:
         datapoint = self._device.datapoints[product.fingerbot.program]
@@ -75,6 +78,7 @@ def get_fingerbot_program(
                     str(position) +
                     (('/' + str(delay)) if delay > 0 else '')
                 )
+    _LOGGER.debug("Fingerbot program obtained: %s", result)
     return result
 
 
@@ -83,6 +87,7 @@ def set_fingerbot_program(
     product: TuyaBLEProductInfo,
     value: str,
 ) -> None:
+    _LOGGER.debug("Setting Fingerbot program for text entity: %s to %s", self, value)
     if product.fingerbot and product.fingerbot.program:
         datapoint = self._device.datapoints[product.fingerbot.program]
         if datapoint and type(datapoint.value) is bytes:
@@ -94,6 +99,7 @@ def set_fingerbot_program(
                 position = int(step_values[0])
                 delay = int(step_values[1]) if len(step_values) > 1 else 0
                 new_value += pack(">BH", position, delay)
+            _LOGGER.debug("New Fingerbot program value: %s", new_value)
             self._hass.create_task(datapoint.set_value(new_value))
 
 
@@ -237,7 +243,8 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up the Tuya BLE sensors."""
+    """Set up the Tuya BLE text entities."""
+    _LOGGER.debug("Setting up Tuya BLE text entities for entry: %s", entry.entry_id)
     data: TuyaBLEData = hass.data[DOMAIN][entry.entry_id]
     mappings = get_mapping_by_device(data.device)
     entities: list[TuyaBLEText] = []

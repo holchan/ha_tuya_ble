@@ -526,26 +526,40 @@ class TuyaBLENumber(TuyaBLEEntity, NumberEntity):
         product: TuyaBLEProductInfo,
         mapping: TuyaBLENumberMapping,
     ) -> None:
+        _LOGGER.debug(
+            "Initializing TuyaBLENumber with device: %s, product: %s, mapping: %s",
+            device, product, mapping
+        )
         super().__init__(hass, coordinator, device, product, mapping.description)
         self._mapping = mapping
         self._attr_mode = mapping.mode
+        _LOGGER.debug("TuyaBLENumber initialized with mode: %s", self._attr_mode)
 
     @property
     def native_value(self) -> float | None:
         """Return the entity value to represent the entity state."""
+        _LOGGER.debug("Getting native value for device: %s", self._device)
         if self._mapping.getter:
-            return self._mapping.getter(self, self._product)
+            value = self._mapping.getter(self, self._product)
+            _LOGGER.debug("Native value obtained using getter: %s", value)
+            return value
 
         datapoint = self._device.datapoints[self._mapping.dp_id]
         if datapoint:
-            return datapoint.value / self._mapping.coefficient
+            value = datapoint.value / self._mapping.coefficient
+            _LOGGER.debug("Native value obtained from datapoint: %s", value)
+            return value
 
-        return self._mapping.description.native_min_value
+        default_value = self._mapping.description.native_min_value
+        _LOGGER.debug("Returning default native value: %s", default_value)
+        return default_value
 
     def set_native_value(self, value: float) -> None:
         """Set new value."""
+        _LOGGER.debug("Setting native value for device: %s to %s", self._device, value)
         if self._mapping.setter:
             self._mapping.setter(self, self._product, value)
+            _LOGGER.debug("Native value set using setter")
             return
         int_value = int(value * self._mapping.coefficient)
         datapoint = self._device.datapoints.get_or_create(
@@ -554,14 +568,17 @@ class TuyaBLENumber(TuyaBLEEntity, NumberEntity):
             int(int_value),
         )
         if datapoint:
+            _LOGGER.debug("Setting datapoint value to: %s", int_value)
             self._hass.create_task(datapoint.set_value(int_value))
 
     @property
     def available(self) -> bool:
         """Return if entity is available."""
         result = super().available
+        _LOGGER.debug("Checking availability for device: %s, initial result: %s", self._device, result)
         if result and self._mapping.is_available:
             result = self._mapping.is_available(self, self._product)
+            _LOGGER.debug("Availability determined by mapping: %s", result)
         return result
 
 
@@ -570,14 +587,17 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up the Tuya BLE sensors."""
+    """Set up the Tuya BLE numbers."""
+    _LOGGER.debug("Setting up Tuya BLE numbers for entry: %s", entry.entry_id)
     data: TuyaBLEData = hass.data[DOMAIN][entry.entry_id]
     mappings = get_mapping_by_device(data.device)
+    _LOGGER.debug("Mappings obtained for device: %s", mappings)
     entities: list[TuyaBLENumber] = []
     for mapping in mappings:
         if mapping.force_add or data.device.datapoints.has_id(
             mapping.dp_id, mapping.dp_type
         ):
+            _LOGGER.debug("Adding TuyaBLENumber entity for mapping: %s", mapping)
             entities.append(
                 TuyaBLENumber(
                     hass,
@@ -588,3 +608,4 @@ async def async_setup_entry(
                 )
             )
     async_add_entities(entities)
+    _LOGGER.debug("Entities added: %s", entities)
