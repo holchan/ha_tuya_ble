@@ -4,7 +4,23 @@
   "bluetooth": [
     {
       "connectable": true,
-      "service_data_uuid": ["0000a201-0000-1000-8000-00805f9b34fb", "00000e88-0000-1000-8000-00805f9b34fb", "0000a201-0000-1000-8000-00805f9b34fb"]
+      "service_data_uuid": "0000a201-0000-1000-8000-00805f9b34fb"
+    },
+    {
+      "connectable": true,
+      "service_data_uuid": "00000008-0000-1000-8000-00805f9b34fb"
+    },
+    {
+      "connectable": true,
+      "service_data_uuid": "00000e88-0000-1000-8000-00805f9b34fb"
+    },
+    {
+      "connectable": true,
+      "service_data_uuid": "00000c88-0000-1000-8000-00805f9b34fb"
+    },
+    {
+      "connectable": true,
+      "service_data_uuid": "00001088-0000-1000-8000-00805f9b34fb"
     }
   ],
   "codeowners": ["@PlusPlus-ua"],
