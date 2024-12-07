@@ -242,26 +242,46 @@ class TuyaBLEConfigFlow(ConfigFlow, domain=DOMAIN):
 
     async def async_step_bluetooth(self, discovery_info: BluetoothServiceInfoBleak) -> FlowResult:
         """Handle the bluetooth discovery step."""
-        _LOGGER.debug("Bluetooth discovery step with discovery info: %s", discovery_info)
-        _LOGGER.debug("Discovery service_data: %s", discovery_info.service_data)
-        _LOGGER.debug("Discovery service_uuids: %s", discovery_info.service_uuids)
-        """Handle the bluetooth discovery step."""
-        _LOGGER.debug("Bluetooth discovery step with discovery info: %s", discovery_info)
+        _LOGGER.debug(
+            "Bluetooth discovery step for device %s: service_data=%s, service_uuids=%s", 
+            discovery_info.address,
+            discovery_info.service_data,
+            discovery_info.service_uuids
+        )
+
         await self.async_set_unique_id(discovery_info.address)
         self._abort_if_unique_id_configured()
         self._discovery_info = discovery_info
+
+        # Initialize manager if needed
         if self._manager is None:
             self._manager = HASSTuyaBLEDeviceManager(self.hass, self._data)
-            _LOGGER.debug("Manager initialized: %s", self._manager)
+            _LOGGER.debug("Manager initialized for device %s", discovery_info.address)
+
+        # Build cache and log the process
         await self._manager.build_cache()
-        _LOGGER.debug("Cache built for manager")
-        self.context["title_placeholders"] = {
-            "name": await get_device_readable_name(
-                discovery_info,
-                self._manager,
-            )
-        }
-        _LOGGER.debug("Title placeholders set: %s", self.context["title_placeholders"])
+        _LOGGER.debug("Cache built for device %s", discovery_info.address)
+
+        # Set title placeholders and log them
+        device_name = await get_device_readable_name(discovery_info, self._manager)
+        self.context["title_placeholders"] = {"name": device_name}
+        _LOGGER.debug(
+            "Device %s details: name=%s, manufacturer=%s", 
+            discovery_info.address,
+            device_name,
+            discovery_info.manufacturer_data if hasattr(discovery_info, 'manufacturer_data') else 'N/A'
+        )
+
+        # Additional debug information for service data
+        if discovery_info.service_data:
+            for uuid, data in discovery_info.service_data.items():
+                _LOGGER.debug(
+                    "Device %s service data - UUID: %s, Data: %s",
+                    discovery_info.address,
+                    uuid,
+                    data.hex() if isinstance(data, bytes) else data
+                )
+
         return await self.async_step_login()
 
     async def async_step_user(
