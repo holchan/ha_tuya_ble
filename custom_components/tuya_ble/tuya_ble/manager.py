@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
+from abc import ABC, Abstaractmethod
 from dataclasses import dataclass
 import logging
 
@@ -41,10 +41,10 @@ class TuyaBLEDeviceCredentials:
             self.status_range,
         )
 
-class AbstractTuyaBLEDeviceManager(ABC):
-    """Abstract manager of the Tuya BLE devices credentials."""
+class AbstaractTuyaBLEDeviceManager(ABC):
+    """Abstaract manager of the Tuya BLE devices credentials."""
 
-    @abstractmethod
+    @Abstaractmethod
     async def get_device_credentials(
         self,
         address: str,

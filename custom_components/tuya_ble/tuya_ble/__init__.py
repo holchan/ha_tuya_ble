@@ -8,14 +8,14 @@ from .const import (
     TuyaBLEDataPointType, 
 )
 from .manager import (
-    AbstractTuyaBLEDeviceManager,
+    AbstaractTuyaBLEDeviceManager,
     TuyaBLEDeviceCredentials,
 )
 from .tuya_ble import TuyaBLEDataPoint, TuyaBLEDevice, TuyaBLEEntityDescription
 
 
 __all__ = [
-    "AbstractTuyaBLEDeviceManager",
+    "AbstaractTuyaBLEDeviceManager",
     "TuyaBLEDataPoint",
     "TuyaBLEDataPointType",
     "TuyaBLEDevice",

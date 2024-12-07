@@ -48,7 +48,7 @@ from .exceptions import (
     TuyaBLEDeviceError,
     TuyaBLEEnumValueError,
 )
-from .manager import AbstractTuyaBLEDeviceManager, TuyaBLEDeviceCredentials
+from .manager import AbstaractTuyaBLEDeviceManager, TuyaBLEDeviceCredentials
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -252,7 +252,7 @@ class TuyaBLEDeviceFunction:
 class TuyaBLEDevice:
     """Representation of a Tuya BLE Device."""
 
-    def __init__(self, manager: AbstractTuyaBLEDeviceManager, ble_device: BLEDevice) -> None:
+    def __init__(self, manager: AbstaractTuyaBLEDeviceManager, ble_device: BLEDevice) -> None:
         _LOGGER.debug("Initializing TuyaBLEDevice with manager: %s, ble_device: %s", manager, ble_device)
         self._device_manager = manager
         self._ble_device = ble_device
