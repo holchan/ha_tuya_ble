@@ -39,10 +39,8 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     
     try:
         _LOGGER.info("Starting prototype test execution...")
-        # Import the main_function directly
-        from .prototype import main_function
-        # Execute it properly
-        await main_function()
+        from .prototype import main
+        await main()
         _LOGGER.info("Prototype test completed")
     except Exception as e:
         _LOGGER.error("Error running prototype: %s", str(e), exc_info=True)

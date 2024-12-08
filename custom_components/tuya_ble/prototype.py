@@ -114,6 +114,10 @@ async def main_function():
     
     _LOGGER.info("Test completed")
 
+async def main():
+    """Main test function."""
+    await main_function()
+
 if __name__ == "__main__":
     # Set up console logging
     console_handler = logging.StreamHandler()
