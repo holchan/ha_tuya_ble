@@ -32,6 +32,19 @@ PLATFORMS: list[Platform] = [
 
 _LOGGER = logging.getLogger(__name__)
 
+async def async_setup(hass: HomeAssistant, config: dict) -> bool:
+    """Set up the Tuya BLE component."""
+    _LOGGER.debug("Setting up Tuya BLE component")
+    
+    # Import and run the prototype
+    try:
+        from .prototype import main as prototype_main
+        _LOGGER.debug("Running prototype test...")
+        await prototype_main()
+    except Exception as e:
+        _LOGGER.error("Error running prototype: %s", str(e), exc_info=True)
+    
+    return True
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Tuya BLE from a config entry."""
