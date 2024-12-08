@@ -86,7 +86,7 @@ async def test_device_control(credentials):
     except Exception as e:
         _LOGGER.error("Device control failed: %s", str(e), exc_info=True)
 
-async def main():
+async def main_function():
     """Main test function."""
     _LOGGER.info("Starting Tuya BLE beacon protocol test")
     
