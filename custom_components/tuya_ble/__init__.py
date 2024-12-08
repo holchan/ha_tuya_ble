@@ -17,6 +17,7 @@ from .tuya_ble import TuyaBLEDevice
 from .cloud import HASSTuyaBLEDeviceManager
 from .const import DOMAIN
 from .devices import TuyaBLECoordinator, TuyaBLEData, get_device_product_info
+from .prototype import main_function  # Import your main function
 
 PLATFORMS: list[Platform] = [
     Platform.BUTTON,
@@ -38,9 +39,7 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     
     # Import and run the prototype
     try:
-        from .prototype import main as prototype_main
-        _LOGGER.debug("Running prototype test...")
-        await prototype_main()
+        await main_function()  # Call your function
     except Exception as e:
         _LOGGER.error("Error running prototype: %s", str(e), exc_info=True)
     

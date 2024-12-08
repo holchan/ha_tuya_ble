@@ -43,6 +43,11 @@ async def test_cloud_auth():
         response = await device_manager.login(add_to_cache=True)
         _LOGGER.debug("Auth response: %s", response)
         
+        if response.get('success'):
+            _LOGGER.info("Login successful")
+        else:
+            _LOGGER.warning("Login failed: %s", response)
+        
         return device_manager
         
     except Exception as e:
