@@ -38,8 +38,10 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     _LOGGER.debug("Setting up Tuya BLE component")
     
     try:
-        _LOGGER.info("Running prototype tests...")
-        await main_function()  # Make sure this line is actually being executed
+        _LOGGER.info("Starting prototype test execution...")
+        # Create an event loop if needed
+        loop = asyncio.get_event_loop()
+        await loop.create_task(main_function())
     except Exception as e:
         _LOGGER.error("Error running prototype: %s", str(e), exc_info=True)
     
