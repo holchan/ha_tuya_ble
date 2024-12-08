@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from ha_tuya_ble.cloud import HASSTuyaBLEDeviceManager
+from .cloud import HASSTuyaBLEDeviceManager
 
 # Set up logging
 _LOGGER = logging.getLogger(__name__)
