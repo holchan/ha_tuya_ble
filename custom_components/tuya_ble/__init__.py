@@ -37,10 +37,9 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Set up the Tuya BLE component."""
     _LOGGER.debug("Setting up Tuya BLE component")
     
-    # Add this block to run the prototype
     try:
         _LOGGER.info("Running prototype tests...")
-        await main_function()  # Call the prototype's main function
+        await main_function()  # Make sure this line is actually being executed
     except Exception as e:
         _LOGGER.error("Error running prototype: %s", str(e), exc_info=True)
     
